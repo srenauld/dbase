@@ -1,0 +1,9 @@
+[package]
+name = "dbase"
+version = "0.1.0"
+authors = ["Seb Renauld <seb.renauld@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+chrono = "*"
+byteorder = "*"

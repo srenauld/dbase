@@ -1,4 +1,4 @@
-#![feature(slicing_syntax)]
+// #![feature(slicing_syntax)]
 extern crate chrono;
 extern crate byteorder;
 
@@ -7,6 +7,6 @@ pub mod fields;
 use std::path::Path;
 use std::io;
 
-pub fn open(file: &str) -> Result<crate::header::Database, io::Error> {
+pub fn open(file: &str) -> Result<header::Database, io::Error> {
     header::Database::parse(file)
 }

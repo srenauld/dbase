@@ -5,10 +5,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::io;
 use std::iter::{IntoIterator, Iterator};
-use std::io::Read;
-use byteorder::{ReadBytesExt, LittleEndian};
+use std::io::{Seek, Read};
+use byteorder::{ReadBytesExt, BigEndian, LittleEndian};
 use std::str::FromStr;
 use std::sync::Arc;
+use std::fmt::Debug;
 use super::fields;
 
 #[derive(Debug)]
@@ -25,21 +26,20 @@ pub enum Version {
 impl Version {
     pub fn from_byte(byte: &u8) -> Version {
         match byte {
-            0x02 => Self::FoxBase,
-            0x03 => Self::dBASE3(false),
-            0x30 => Self::VisualFoxPro(false, false),
-            0x31 => Self::VisualFoxPro(true, false),
-            0x32 => Self::VisualFoxPro(false, true),
-            0x33 => Self::VisualFoxPro(true, true),
-            0x43 => Self::dBASE4Table(false),
-            0x63 => Self::dBASE4System(false),
-            0x83 => Self::dBASE3(true),
-            0x8b => Self::dBASE4System(true),
-            0xcb => Self::dBASE4Table(true),
-            0xfb => Self::FoxPro2(false),
-            0xf5 => Self::FoxPro2(true),
-            0x83 => Self::dBASE3(true),
-            _ => Self::Unknown
+            0x02 => Version::FoxBase,
+            0x03 => Version::dBASE3(false),
+            0x30 => Version::VisualFoxPro(false, false),
+            0x31 => Version::VisualFoxPro(true, false),
+            0x32 => Version::VisualFoxPro(false, true),
+            0x33 => Version::VisualFoxPro(true, true),
+            0x43 => Version::dBASE4Table(false),
+            0x63 => Version::dBASE4System(false),
+            0x83 => Version::dBASE3(true),
+            0x8b => Version::dBASE4System(true),
+            0xcb => Version::dBASE4Table(true),
+            0xfb => Version::FoxPro2(false),
+            0xf5 => Version::FoxPro2(true),
+            _ => Version::Unknown
         }
     }
 }
@@ -47,7 +47,7 @@ impl Version {
 #[derive(Debug, Clone)]
 pub struct FieldDescriptor {
     pub name: String,
-    pub field_type: Arc<Box<FieldType>>,
+    pub field_type: Arc<Box<dyn FieldType>>,
     data_address: u32,
     length: u8,
     decimal_count: u8
@@ -65,7 +65,8 @@ pub struct Header {
 
 pub struct Database {
     path: PathBuf,
-    files: HashMap<String, File>,
+    descriptor: Option<Box<dyn Read>>,
+    pub memo: Option<Box<dyn MemoContainer>>,
     pub header: Header
 }
 
@@ -81,9 +82,152 @@ fn parse_date(data: Vec<u8>) -> Result<Date<Utc>, io::Error> {
     }
 }
 
+trait MemoContainer:Debug {
+    fn memo(&mut self, id: Vec<u8>) -> Result<Vec<u8>, io::Error>;
+}
+
+#[derive(Debug)]
+pub struct FoxProMemoContainer {
+    descriptor: File,
+    fragment_size: u32,
+    block_size: u32
+}
+impl FoxProMemoContainer {
+    pub fn open<T:AsRef<Path>>(path: T) -> Result<Self, io::Error> {
+        let mut file = File::open(path)?;
+        let mut buf = vec![];
+        buf.resize(8, 0);
+        file.read_exact(&mut buf)?;
+        let next_available = {
+            let bytes = buf[0..4].to_vec();
+            let mut reader = io::Cursor::new(bytes);
+            reader.read_u32::<LittleEndian>()?
+        };
+        let block_size = {
+            let bytes = buf[4..6].to_vec();
+            let mut reader = io::Cursor::new(bytes);
+            match reader.read_u16::<LittleEndian>()? {
+                0 => 512,
+                v => v
+            }
+        };
+        let fragment_size = {
+            let bytes = buf[7];
+            bytes
+
+        };
+        Ok(FoxProMemoContainer {
+            descriptor: file,
+            fragment_size: fragment_size as u32,
+            block_size: block_size as u32
+        })
+    }
+}
+impl MemoContainer for FoxProMemoContainer {
+    fn memo(&mut self, data:Vec<u8>) -> Result<Vec<u8>, io::Error> {
+        let id:u32 = {
+            let mut reader = io::Cursor::new(data);
+            reader.read_u32::<LittleEndian>()?
+        };
+        self.descriptor.seek(io::SeekFrom::Start((self.fragment_size as u64)* (id as u64)))?;
+        let data_type = {
+            let mut buf_header = vec![];
+            buf_header.resize(4, 0);
+            self.descriptor.read_exact(&mut buf_header)?;
+            buf_header[2]
+        };
+        // Seek another 4 bytes to get the length of the memo
+        let memo_len = {
+            let mut buf_length = vec![];
+            buf_length.resize(4, 0);
+            self.descriptor.read_exact(&mut buf_length)?;
+            let mut reader = io::Cursor::new(buf_length);
+            reader.read_u32::<BigEndian>()?
+        };
+        // Read the memo
+        let mut memo_buf = vec![];
+        memo_buf.resize(memo_len as usize, 0);
+        self.descriptor.read_exact(&mut memo_buf)?;
+        Ok(memo_buf)
+    }
+}
+#[derive(Debug)]
+pub struct DBaseMemoContainer {
+    descriptor: File,
+    block_size: usize,
+    next_available: usize
+}
+impl DBaseMemoContainer {
+    pub fn open<T:AsRef<Path>>(path: T) -> Result<Self, io::Error> {
+        let mut file = File::open(path)?;
+        let mut buf = vec![];
+        buf.resize(8, 0);
+        file.read_exact(&mut buf)?;
+        let next_available = {
+            let bytes = buf[0..4].to_vec();
+            let mut reader = io::Cursor::new(bytes);
+            reader.read_u32::<LittleEndian>()?
+        };
+        let block_size = {
+            let bytes = buf[4..6].to_vec();
+            let mut reader = io::Cursor::new(bytes);
+            match reader.read_u16::<LittleEndian>()? {
+                0 => 512,
+                v => v
+            }
+        };
+        Ok(DBaseMemoContainer {
+            descriptor: file,
+            block_size: block_size as usize,
+            next_available: next_available as usize
+        })
+    }
+}
+impl MemoContainer for DBaseMemoContainer {
+    fn memo(&mut self, data: Vec<u8>) -> Result<Vec<u8>, io::Error> {
+        let id:u32 = {
+            String::from_utf8(data.clone())
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, format!("The field content {:?} cannot be casted to a string", data)))
+                .and_then(|data_str| {
+                    FromStr::from_str(data_str.trim_start())
+                    .map_err(|_| {
+                        io::Error::new(io::ErrorKind::InvalidData, format!("The field content {:?} cannot be casted to a float", data))
+                    })
+                })?
+        };
+        self.descriptor.seek(io::SeekFrom::Start((self.block_size as u64) * (id as u64)))?;
+        let mut memo_bytes = vec![];
+        let mut done = false;
+        while !done {
+            let mut bytes = vec![];
+            bytes.resize(self.block_size, 0);
+            let bytes_read = self.descriptor.read(&mut bytes)?;
+            done = bytes_read < self.block_size || bytes.contains(&0x1a);
+            memo_bytes.append(&mut bytes);
+        }
+        let mut new_bytes:Vec<Vec<u8>> = memo_bytes.rsplitn(2, |n| *n == 0x1a).map(|r| r.to_vec()).collect();
+        if new_bytes.len() > 1 {
+            new_bytes.reverse();
+            new_bytes.pop();
+        }
+        let mut output = vec![];
+        new_bytes.into_iter().for_each(|mut e| output.append(&mut e));
+        match output.last() {
+            Some(r) if *r == 0x1a => { output.pop(); },
+            _ => ()
+        }
+        Ok(output)
+    }
+}
+
 #[derive(Debug)]
 pub struct Record {
-    fields: HashMap<String, FieldValue>
+    pub fields: HashMap<String, FieldValue>
+}
+impl Record {
+    pub fn get(&self, field: &str) -> Option<&FieldValue> {
+        self.fields.get(&field.to_string())
+    }
 }
 
 pub struct DatabaseRecordIterator {
@@ -101,6 +245,8 @@ impl DatabaseRecordIterator {
                 field.field_type.parse(&mut self.database, record_bytes).map(|r| {
                     fields.push((field.name.clone(), r));
                     fields
+                }).map_err(|e| {
+                    e
                 })
             })
         });
@@ -116,16 +262,10 @@ impl Iterator for DatabaseRecordIterator {
     type Item = Record;
     fn next(&mut self) -> Option<Self::Item> {
         // Read the next record
-        self.database.files.get("dbf")
-            .ok_or(io::Error::new(io::ErrorKind::NotFound, "DBF file wasn't open"))
-            .and_then(|mut file| {
-                let mut buf = vec![];
-                buf.resize(self.record_size, 0);
-                file.read_exact(&mut buf)?;
-                Ok(buf)
-            }).and_then(|buf| {
-                self.parse_row(buf)
-            }).ok()
+        self.database.read_bytes(self.record_size)
+        .and_then(|buf| {
+            self.parse_row(buf)
+        }).ok()
     }
 }
 impl IntoIterator for Database {
@@ -143,18 +283,26 @@ impl IntoIterator for Database {
     }
 }
 impl Database {
+    fn read_bytes(&mut self, count: usize) -> Result<Vec<u8>, io::Error> {
+        self.descriptor.as_mut().ok_or(io::Error::new(io::ErrorKind::NotFound, "No descriptor"))
+        .and_then(|file| {
+            let mut buf = vec![];
+            buf.resize(count+1, 0);
+            file.read_exact(&mut buf)?;
+            Ok(buf)
+        })
+    }
     fn parse_fields(buffer: Vec<u8>) -> Result<Vec<FieldDescriptor>, io::Error> {
         let mut iter = buffer.chunks(32);
         let mut fields = vec![];
         let mut done = false;
         let parse_field = |data:Vec<u8>| -> Result<FieldDescriptor, io::Error> {
             let field_name = String::from_utf8(data[0..11].to_vec())
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, "Invalid string"))
-                .map(|mut e| {
-                    e.trim();
-                    e.replace("\0", "")
+                .map_err(|_e| io::Error::new(io::ErrorKind::InvalidInput, "Invalid string"))
+                .map(|e| {
+                    e.trim().replace("\0", "")
                 })?;
-            let field_type_res:Result<Box<fields::FieldType>, io::Error> = match data[11] {
+            let field_type_res:Result<Box<dyn fields::FieldType>, io::Error> = match data[11] {
                 67 => Ok(Box::new(fields::FieldTypeC)),
                 68 => Ok(Box::new(fields::FieldTypeD)),
                 70 | 78 => Ok(Box::new(fields::FieldTypeOldNumeric)),
@@ -197,10 +345,9 @@ impl Database {
         }
         Ok(fields)
     }
-    pub fn parse(path:&str) -> Result<Database, io::Error> {
-        let path_buf = PathBuf::from(path);
-        let mut file = File::open(path_buf)?;
+    pub fn parse(path: &str, mut file: impl Read + 'static) -> Result<Database, io::Error> {
         let mut byte_header = [0; 12];
+        let file_path = PathBuf::from(path);
         file.read_exact(&mut byte_header)?;
         let version_byte = byte_header.first().ok_or(io::Error::new(io::ErrorKind::NotFound, "No version descriptor"))?;
         let version = Version::from_byte(&version_byte);
@@ -223,7 +370,7 @@ impl Database {
         };
         {
             let mut wasted_buffer = [0;20];
-            let wasted_bytes = file.read_exact(&mut wasted_buffer)?;
+            file.read_exact(&mut wasted_buffer)?;
         };
         let size:usize = (header_size - 32 + 1).into();
         let mut field_buffer = vec![];
@@ -231,11 +378,38 @@ impl Database {
         file.read_exact(&mut field_buffer)?;
 
         let fields:Vec<FieldDescriptor> = Self::parse_fields(field_buffer)?;
+
+        // Do we have a memo file?
+        let stem = file_path.file_stem().and_then(|r| r.to_str()).map(|r| r.to_string()).unwrap_or("".to_string());
+        let mut dir_path:Vec<_> = file_path.components().map(|r| r.as_os_str()).collect();
+        dir_path.pop();
+        let mut dir = PathBuf::new();
+        dir_path.into_iter().for_each(|component| dir.push(component));
+
+        let memo_file:Option<Box<MemoContainer>> = {
+            let mut dbt_pathbuf = dir.clone();
+            dbt_pathbuf.push(format!("{}.dbt", stem));
+            match dbt_pathbuf.is_file() {
+                true => {
+                    Some(Box::new(DBaseMemoContainer::open(dbt_pathbuf)?))
+                },
+                false => {
+                    let mut fpt_pathbuf = dir.clone();
+                    fpt_pathbuf.push(format!("{}.fpt", stem));
+                    match fpt_pathbuf.is_file() {
+                        true => {
+                            Some(Box::new(FoxProMemoContainer::open(fpt_pathbuf)?))
+                        },
+                        false => None
+                    }
+                }
+            }
+        };
+
         Ok(Database {
             path: path.into(),
-            files: vec![
-                ("dbf".to_string(), file)
-            ].into_iter().collect(),
+            memo: memo_file,
+            descriptor: Some(Box::new(file)),
             header: Header {
                 version: version,
                 last_update: date_modified,
@@ -247,10 +421,16 @@ impl Database {
         })
     }
 
+    pub fn get_memo(&mut self, data: Vec<u8>) -> Option<Vec<u8>> {
+        self.memo.as_mut().and_then(|container| {
+            container.memo(data).ok()
+        })
+    }
     pub fn new_at(s: &str) -> Self {
         Database {
             path: PathBuf::from(s),
-            files: HashMap::new(),
+            memo: None,
+            descriptor: None,
             header: Header {
                 version: Version::Unknown,
                 last_update: Utc::now().date(),

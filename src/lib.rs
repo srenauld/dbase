@@ -4,9 +4,9 @@ extern crate byteorder;
 
 pub mod header;
 pub mod fields;
-use std::path::Path;
 use std::io;
 
-pub fn open(file: &str) -> Result<header::Database, io::Error> {
-    header::Database::parse(file)
+pub fn open(path: &str) -> Result<header::Database, io::Error> {
+    let file = std::fs::File::open(path)?;
+    header::Database::parse(path, file)
 }

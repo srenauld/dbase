@@ -15,16 +15,22 @@ cache:
     - target/debug/deps
     - target/debug/build
 
+install:
+  - cargo install cargo-kcov
+  - wget -O /tmp/install_kcov.sh https://gist.githubusercontent.com/srenauld/325d16ca4a2cd5ec4eb9e356b74b922e/raw/476bde97174fd4b0ec901cd5065886d11427e0e1/install.sh && chmod a+x /tmp/install_kcov.sh && sudo /tmp/install_kcov.sh
+
 addons:
   apt:
     packages:
       - libcurl4-openssl-dev
       - libelf-dev
       - libdw-dev
+      - cmake
+      - g++
+      - pkg-config
+      - jq
+      - binutils-dev
+      - libiberty-dev
 
 after_success: |
-    [ $TRAVIS_RUST_VERSION = stable ] &&
-    wget https://github.com/shaneutt/kcov/archive/master.tar.gz &&
-    tar xzf master.tar.gz && mkdir kcov-master/build && cd kcov-master/build && cmake .. && make && make install DESTDIR=../tmp && cd ../.. &&
-    ls target/debug &&
-    ./kcov-master/tmp/usr/local/bin/kcov –coveralls-id=$TRAVIS_JOB_ID –exclude-pattern=/.cargo target/kcov target/debug/dbase-*
+  cargo kcov --coveralls

@@ -17,7 +17,8 @@ cache:
 
 install:
   - cargo install cargo-kcov
-  - cargo kcov --print-install-kcov-sh | sh
+  - wget -O /tmp/install_kcov.sh https://gist.githubusercontent.com/srenauld/325d16ca4a2cd5ec4eb9e356b74b922e/raw/476bde97174fd4b0ec901cd5065886d11427e0e1/install.sh && chmod a+x /tmp/install_kcov.sh && sudo /tmp/install_kcov.sh
+
 addons:
   apt:
     packages:

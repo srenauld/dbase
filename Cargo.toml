@@ -3,6 +3,10 @@ name = "dbase_parser"
 version = "0.1.0"
 authors = ["Seb Renauld <seb.renauld@gmail.com>"]
 edition = "2018"
+description = "A fast, efficient dbase DBF/DBT/FPT parser"
+license = "GPLv3"
+homepage = "https://github.com/srenauld/dbase"
+repository = "https://github.com/srenauld/dbase"
 
 [dependencies]
 chrono = "*"

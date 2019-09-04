@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod tests {
-    use dbase::fields::FieldValue;
-    use dbase::open;
+    use dbase_parser::fields::FieldValue;
+    use dbase_parser::open;
     use chrono::{Utc};
     use chrono::offset::TimeZone;
-    use dbase::header::Record;
+    use dbase_parser::header::Record;
     #[test]
     fn parse_file_fpt() {
         let r = open("tests/reference_fpt.dbf");

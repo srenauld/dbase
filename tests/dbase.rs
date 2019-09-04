@@ -5,6 +5,23 @@ mod tests {
     use chrono::{Utc};
     use chrono::offset::TimeZone;
     use dbase_parser::header::Record;
+
+    #[test]
+    fn parse_file_gis() {
+        let db = open("tests/reference_gis.dbf").expect("Could not open file");
+        let record = db.into_iter().next().expect("No first record");
+        assert_eq!(record.get("NAME_4").unwrap(), &FieldValue::Text("Clervaux".to_string()));
+        assert_eq!(record.get("NAME_3").unwrap(), &FieldValue::Text("Clervaux".to_string()));
+        assert_eq!(record.get("NAME_2").unwrap(), &FieldValue::Text("Clervaux".to_string()));
+        assert_eq!(record.get("NAME_1").unwrap(), &FieldValue::Text("Diekirch".to_string()));
+        assert_eq!(record.get("NAME_0").unwrap(), &FieldValue::Text("Luxembourg".to_string()));
+        assert_eq!(record.get("ISO").unwrap(), &FieldValue::Text("LUX".to_string()));
+        assert_eq!(record.get("ID_4").unwrap(), &FieldValue::Numeric(1.0));
+        assert_eq!(record.get("ID_3").unwrap(), &FieldValue::Numeric(1.0));
+        assert_eq!(record.get("ID_2").unwrap(), &FieldValue::Numeric(1.0));
+        assert_eq!(record.get("ID_1").unwrap(), &FieldValue::Numeric(1.0));
+        assert_eq!(record.get("ID_0").unwrap(), &FieldValue::Numeric(131.0));
+    }
     #[test]
     fn parse_file_fpt() {
         let r = open("tests/reference_fpt.dbf");

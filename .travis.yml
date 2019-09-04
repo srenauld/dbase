@@ -15,9 +15,24 @@ cache:
     - target/debug/deps
     - target/debug/build
 
+dependencies:
+  cache_directories:
+    - kcov-36
+  override:
+    - |
+      if [[ ! -d "kcov-36" ]]; then
+        wget 'https://github.com/SimonKagstrom/kcov/archive/v36.zip' -O /tmp/kcov.zip
+        unzip /tmp/kcov.zip
+        cd kcov-36
+        cmake .
+        make -j$(nproc)
+      else
+        cd kcov-36
+      fi
+      sudo make install
+
 install:
   - cargo install cargo-kcov
-  - wget -O /tmp/install_kcov.sh https://gist.githubusercontent.com/srenauld/325d16ca4a2cd5ec4eb9e356b74b922e/raw/476bde97174fd4b0ec901cd5065886d11427e0e1/install.sh && chmod a+x /tmp/install_kcov.sh && sudo /tmp/install_kcov.sh
 
 addons:
   apt:

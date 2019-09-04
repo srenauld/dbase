@@ -27,7 +27,8 @@ addons:
       - install
       - cmake
       - g++
-      - pkg-config jq
+      - pkg-config
+      - jq
       - binutils-dev
       - libiberty-dev
 

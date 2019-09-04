@@ -15,12 +15,21 @@ cache:
     - target/debug/deps
     - target/debug/build
 
+install:
+  - cargo install cargo-kcov
+  - cargo kcov --print-install-kcov-sh | sh
 addons:
   apt:
     packages:
       - libcurl4-openssl-dev
       - libelf-dev
       - libdw-dev
+      - install
+      - cmake
+      - g++
+      - pkg-config jq
+      - binutils-dev
+      - libiberty-dev
 
 after_success: |
-  cargo install cargo-kcov && cargo kcov --coveralls
+  cargo kcov --coveralls

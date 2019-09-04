@@ -11,7 +11,7 @@ no parsing crate supported the memo (`M`) type, let alone the two
 variants of it.
 
 [![Build Status](https://travis-ci.org/srenauld/dbase.svg?branch=master)](https://travis-ci.org/srenauld/dbase)
-[![Coverage Status](https://coveralls.io/repos/github/srenauld/dbase/badge.svg?branch=coveralls-fix)](https://coveralls.io/github/srenauld/dbase?branch=coveralls-fix)
+[![Coverage Status](https://coveralls.io/repos/github/srenauld/dbase/badge.svg?branch=master)](https://coveralls.io/github/srenauld/dbase?branch=master)
 
 # A disclaimer on versioning
 

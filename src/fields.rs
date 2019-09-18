@@ -39,6 +39,9 @@ impl FieldType for FieldTypeD {
             .map_err(|_e| io::Error::new(io::ErrorKind::InvalidData, format!("The field content {:?} cannot be casted to a string", data)))
             .map(|r| r.trim().to_string())?;
         match field_content.len() {
+            0 => {
+                Ok(FieldValue::Date(Utc.ymd(1900, 1, 1)))
+            },
             8 => {
                 let day_str:String = field_content.split_off(6);
                 let month_str:String = field_content.split_off(4);
@@ -60,15 +63,21 @@ pub struct FieldTypeOldNumeric;
 
 impl FieldType for FieldTypeOldNumeric {
     fn parse(&self, _database: &mut Database, data: Vec<u8>) -> Result<FieldValue, io::Error> {
-        String::from_utf8(data.clone())
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, format!("The field content {:?} cannot be casted to a string", data)))
-            .and_then(|data| {
-                FromStr::from_str(data.trim_start())
-                .map(|r| FieldValue::Numeric(r))
-                .map_err(|_e| {
-                    io::Error::new(io::ErrorKind::InvalidData, format!("The field content {:?} cannot be casted to a float", data))
-                })
-            })
+        let num_length = String::from_utf8(data.clone()).unwrap().trim().len();
+        match num_length {
+            0 => Ok(FieldValue::Numeric(0.0 as f64)),
+            _ => {
+                String::from_utf8(data.clone())
+                    .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, format!("The field content {:?} cannot be casted to a string", data)))
+                    .and_then(|data| {
+                        FromStr::from_str(data.trim_start())
+                            .map(|r| FieldValue::Numeric(r))
+                            .map_err(|_e| {
+                                io::Error::new(io::ErrorKind::InvalidData, format!("The field content {:?} cannot be casted to a float", data))
+                            })
+                    })
+            }
+        }
     }
 }
 
@@ -145,7 +154,7 @@ impl FieldType for FieldTypeM {
             .ok_or(io::Error::new(io::ErrorKind::NotFound, "Memo not found"))
             .and_then(|bytes| {
                 String::from_utf8(bytes)
-                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "The memo cannot be casted to a string"))
+                    .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "The memo cannot be casted to a string"))
             })
             .map(|r| FieldValue::Text(r))
     }
@@ -161,7 +170,7 @@ fn date_works() {
 
 #[test]
 fn datetime_works() {
-    
+
     let date = to_julian_date(2458730).unwrap();
     assert_eq!(date, Utc.ymd(2019,09,03));
 
@@ -169,6 +178,6 @@ fn datetime_works() {
 
     let mut db = Database::new_at("C:/test.txt");
     let o = FieldTypeT {};
-    assert_eq!(o.parse(&mut db, data).unwrap(), FieldValue::DateTime(Utc.ymd(2019, 03, 09).and_hms(01, 0, 0))); 
+    assert_eq!(o.parse(&mut db, data).unwrap(), FieldValue::DateTime(Utc.ymd(2019, 03, 09).and_hms(01, 0, 0)));
 
 }

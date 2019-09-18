@@ -2,3 +2,7 @@
 **/*.rs.bk
 Cargo.lock
 .cargo
+.idea/
+data/
+src/main.rs
+
